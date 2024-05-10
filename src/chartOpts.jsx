@@ -1,4 +1,7 @@
-export const BAR_STACKED_CLICKABLE = ( setMTs, setPTs, setMTsData, setPTsData, pTsDataIndex ) => ({
+import axios from "axios"
+
+// export const BAR_STACKED_CLICKABLE = ( _setMTimespan, _setSegment, setDTimespan ) => ({
+export const BAR_STACKED_CLICKABLE = ( disableHover, _setMTimespan, segmentRef, setSegment, setDTimespan ) => ({
     responsive: true,
 
     maintainAspectRatio: false,
@@ -27,44 +30,104 @@ export const BAR_STACKED_CLICKABLE = ( setMTs, setPTs, setMTsData, setPTsData, p
     onHover: ( event, element ) => {
         event.native.target.style.cursor = element[ 0 ] ? 'pointer' : 'default'
 
-        if( !element.length ){ return }
+        if( disableHover.current ){
+            return
+        }
+
+        const segment = segmentRef.current
+
+        if( !element.length ){
+            // _setMTimespan( ( mTimespan ) => {
+            //     setDTimespan( mTimespan )
+            //     return mTimespan
+            // })
+
+            if( segment !== -1 ){
+                _setMTimespan( ( mTimespan ) => {
+                    setDTimespan( { ...mTimespan, day: null } )
+                    return mTimespan
+                })
+
+                segmentRef.current = -1
+                setSegment( -1 )
+            }
+
+            return
+        }
+    
         const { index } = element[ 0 ]
 
-        if( index !== pTsDataIndex.current ){
-            setMTsData( ( mTsData ) => {
-                const labels = mTsData.datasets.map( ( e ) => e.label )
-                const data = mTsData.datasets.map( ( e ) => e.data[ index ] )
+        if( segment !== index ){
+            _setMTimespan( ( mTimespan ) => {
+                let qParams = `year=${mTimespan.year}`
 
-                
-                setMTs( ( mTs ) => {
-                    if( mTs.week !== null || mTs.day !== null ){
-                        setPTs( { ...mTs, day: index } )
-                    }
-                    else if( mTs.month && mTs.week === null ){
-                        setPTs( { ...mTs, week: index } )
-                    }
-                    else if( mTs.month === null ){
-                        setPTs( { ...mTs, month: index + 1 } )
-                    }
-                    else{
-                        console.log( "Error: this condition should NEVER be true..." )
-                    }
-
-                    return mTs
-                })
-
-                setPTsData({
-                    labels: labels,
-                    datasets: [ { data: data } ]
-                })
-
-                pTsDataIndex.current = index
-
-                return mTsData
+                if( mTimespan.week !== null || mTimespan.day !== null ){
+                    setDTimespan( { ...mTimespan, day: index } )
+                    qParams += `&month=${mTimespan.month}&week=${mTimespan.week}&day=${index}`
+                }
+                else if( mTimespan.month && mTimespan.week === null ){
+                    setDTimespan( { ...mTimespan, week: index } )
+                    qParams += `&month=${mTimespan.month}&week=${index}`
+                }
+                else if( mTimespan.month === null ){
+                    setDTimespan( { ...mTimespan, month: index + 1 } )
+                    qParams += `&month=${index + 1}`
+                }
+                else{
+                    console.log( "Error: this condition should NEVER be true..." )
+                }
+    
+                return mTimespan
             })
+
+            segmentRef.current = index
+            setSegment( index )
         }
     }
 })
+
+//     onHover: ( event, element ) => {
+//         event.native.target.style.cursor = element[ 0 ] ? 'pointer' : 'default'
+
+//         _setSegment( ( segment ) => {
+//             if( !element.length ){
+//                 _setMTimespan( ( mTimespan ) => {
+//                     setDTimespan( mTimespan )
+//                     return mTimespan
+//                 })
+//                 return -1
+//             }
+    
+//             const { index } = element[ 0 ]
+    
+//             if( segment !== index ){
+//                 _setMTimespan( ( mTimespan ) => {
+//                     let qParams = `year=${mTimespan.year}`
+    
+//                     if( mTimespan.week !== null || mTimespan.day !== null ){
+//                         setDTimespan( { ...mTimespan, day: index } )
+//                         qParams += `&month=${mTimespan.month}&week=${mTimespan.week}&day=${index}`
+//                     }
+//                     else if( mTimespan.month && mTimespan.week === null ){
+//                         setDTimespan( { ...mTimespan, week: index } )
+//                         qParams += `&month=${mTimespan.month}&week=${index}`
+//                     }
+//                     else if( mTimespan.month === null ){
+//                         setDTimespan( { ...mTimespan, month: index + 1 } )
+//                         qParams += `&month=${index + 1}`
+//                     }
+//                     else{
+//                         console.log( "Error: this condition should NEVER be true..." )
+//                     }
+        
+//                     return mTimespan
+//                 })
+//             }
+
+//             return index
+//         })
+//     }
+// })
 
 
 export const LINE = {
@@ -80,7 +143,8 @@ export const LINE = {
         },
         y: {
             display: false,
-            max: 3.5
+            min: 0,
+            max: 2
         }
     },
 
@@ -90,7 +154,3 @@ export const LINE = {
         }
     },
 }
-
-
-// const sum = curr.datasets.reduce( ( acum, e ) => ( acum + e.data[ index ] ), 0 )
-// const nPDs = curr.datasets.map( ( e ) => ( { label: e.label, data: [ 100 * e.data[ index ] / sum ] } ) )

@@ -16,9 +16,17 @@ import FilterIcon from "./assets/FilterIcon.svg"
 const MONTH_NAMES = [ "Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic" ]
 const DAY_NAMES = [ "Lun", "Mar", "Mie", "Jue", "Vie", "Sab", "Dom" ]
 
+const RiskLevelsParams = {
+    L_RISK: { fc: "#059BFF", sc: "#9AD0F5", tc: "#d1e7f6", },
+    H_RISK: { fc: "#FF9020", sc: "#FFCF9F", tc: "#f7e4d1", },
+    M_RISK: { fc: "#FF4069", sc: "#FFB1C1", tc: "#f7d2da", }
+}
+
 const Ctx = createContext( null )
 
 const apiHostname = "https://mmontoya-back.onrender.com"
+// const apiHostname = "http://localhost:8000"
+
 
 function MTsButton( { text, onClick, marginLeft = false } ){
     return <button
@@ -37,240 +45,203 @@ function MTsButton( { text, onClick, marginLeft = false } ){
 }
 
 
-function FilterButton( { text, bgColor, onClick } ){
-    return <button
-        onClick = { onClick }
-
-        style = {{
-            width: "60px",
-            height: "20px",
-
-            margin: "0",
-            marginTop: "6px",
-            padding: "0",
-            
-            fontSize: "x-small",
-            fontWeight: "bold",
-
-            backgroundColor: bgColor
-        }}
-    >
-        { text }
-    </button>
-}
-
-
 function MTsChart(){
     const {
-        mTs, setMTs,
-        pTs, setPTs,
-        // mTsData, setMTsData,
-        pTsData, setPTsData,
-        interList, setInterList,
-        selInter, setSelInter,
-        clientRoadmap, setClientRoadmap
+        mTimespan, setMTimespan,
+        setDTimespan,
+        metrics, setMetrics,
+        setSegment,
+        setInterList,
+        setSelInter,
+        setClientRoadmap,
+        setCreateInter
     } = useContext( Ctx )
 
+    const disableHover = useRef( true )
+    const segmentRef = useRef( -1 )
+
     const chartRef = useRef( null )
-    const [ data, setData ] = useState( { labels: [], datasets: [] } )
-    const pTsDataIndex = useRef( null )
-    const [ opts, setOpts ] = useState( BAR_STACKED_CLICKABLE( setMTs, setPTs, setData, setPTsData, pTsDataIndex ) )
-
-    const [ agents, setAgents ] = useState( [ "-" ] )
-
-    const [ showFilters, setShowFilters ] = useState( false )
-    const [ filters, setFilters ] = useState({
-        selAgent: 0,
-        contact: true,
-        deposit: true,
-        arrival: true
-    })
 
     useEffect(
         () => {
-            axios.get( `${apiHostname}/agents` )
-            .then( ( res ) => {
-                setAgents( [ "-" ].concat( res.data ) )
-            })
+            setTimeout( () => {
+                disableHover.current = false
+            }, 1500 )
         },
         []
     )
 
-    useEffect(
-        () => {
-            axios.get( `${apiHostname}/interactions/count?year=2024` )
-            .then( ( res ) => {
-                const labels = res.data.datasets.map( ( e ) => e.label )
-                const data = res.data.datasets.map(
-                    ( e ) => e.data.reduce( ( acum, e ) => acum + e )
-                )
+    const buildDatasets = () => {
+        let datasets = { L_RISK: [], M_RISK: [], H_RISK: [] }
 
-                setData( res.data )
-                setPTsData({
-                    labels: labels,
-                    datasets: [ { data: data } ]
-                })
-
-                axios.get( `${apiHostname}/interactions?year=2024` )
-                .then( ( res ) => {
-                    setInterList( res.data )
-                })
-            })
-        },
-        []
-    )
-
-    const buildFiltersQParams = () => {
-        let qParams = ""
-        
-        if( !filters.contact ){
-            qParams = qParams.concat( "&exc_cont=true" )
-        }
-        if( !filters.deposit ){
-            qParams = qParams.concat( "&exc_dep=true" )
-        }
-        if( !filters.arrival ){
-            qParams = qParams.concat( "&exc_arr=true" )
+        for( const counts of metrics.segments.counts ){
+            datasets.L_RISK.push( counts.L_RISK )
+            datasets.M_RISK.push( counts.M_RISK )
+            datasets.H_RISK.push( counts.H_RISK )
         }
 
-        return qParams
+        return [            
+            {
+                label: "BAJO",
+                data: datasets.L_RISK,
+                borderRadius: 5,
+                backgroundColor: RiskLevelsParams.L_RISK.fc
+            },
+            {
+                label: "MEDIO",
+                data: datasets.M_RISK,
+                borderRadius: 5,
+                backgroundColor: RiskLevelsParams.M_RISK.fc
+            },
+            {
+                label: "ALTO",
+                data: datasets.H_RISK,
+                borderRadius: 5,
+                backgroundColor: RiskLevelsParams.H_RISK.fc
+            }
+        ]
     }
 
+    // const buildFiltersQParams = () => {
+    //     let qParams = ""
+        
+    //     if( !filters.contact ){
+    //         qParams = qParams.concat( "&exc_cont=true" )
+    //     }
+    //     if( !filters.deposit ){
+    //         qParams = qParams.concat( "&exc_dep=true" )
+    //     }
+    //     if( !filters.arrival ){
+    //         qParams = qParams.concat( "&exc_arr=true" )
+    //     }
+
+    //     return qParams
+    // }
+    
     const handleYearClick = () => {
-        let qParams = `?year=${mTs.year}`
-        qParams = qParams.concat( buildFiltersQParams() )
-        axios.get( `${apiHostname}/interactions/count${qParams}` )
+        let qParams = `?year=${mTimespan.year}`
+
+        axios.get( `${apiHostname}/metrics${qParams}` )
         .then( ( res ) => {
-            setData( res.data )
-            setMTs( ( curr ) => ( { ...curr, month: null, week: null, day: null } ) )
-            setPTs( ( curr ) => ( { ...curr, month: null, week: null, day: null } ) )
-
-            const labels = res.data.datasets.map( ( e ) => e.label )
-            const data = res.data.datasets.map(
-                ( e ) => e.data.reduce( ( acum, e ) => acum + e )
-            )
-
-            pTsDataIndex.current = -1
-            setPTsData({
-                labels: labels,
-                datasets: [ { data: data } ]
-            })
-
-            axios.get( `${apiHostname}/interactions${qParams}` )
-            .then( ( res ) => {
-                setInterList( res.data )
-                setSelInter( -1 )
-
-                setClientRoadmap( { labels: [], datasets: [] } )
-                setCreateInter( false )
-            })
+            setMTimespan( ( curr ) => ( { ...curr, month: null, week: null, day: null } ) )
+            setDTimespan( ( curr ) => ( { ...curr, month: null, week: null, day: null } ) )
+            setMetrics( res.data )
+            setSegment( -1 )
         })
+
+        axios.get( `${apiHostname}/interactions${qParams}` )
+        .then( ( res ) => {
+            setInterList( res.data )
+            setSelInter( -1 )
+            setClientRoadmap( { labels: [], datasets: [] } )
+            setCreateInter( false )
+        })
+
+        disableHover.current = true
+        setTimeout( () => {
+            disableHover.current = false
+        }, 1000 )
     }
 
     const handleMonthClick = () => {
-        let qParams = `?year=${mTs.year}&month=${mTs.month}`
-        qParams = qParams.concat( buildFiltersQParams() )
-        axios.get( `${apiHostname}/interactions/count${qParams}` )
+        let qParams = `?year=${mTimespan.year}&month=${mTimespan.month}`
+        
+        axios.get( `${apiHostname}/metrics${qParams}` )
         .then( ( res ) => {
-            setData( res.data )
-            setMTs( ( curr ) => ( { ...curr, week: null, day: null } ) )
-            setPTs( ( curr ) => ( { ...curr, week: null, day: null } ) )
-
-            const labels = res.data.datasets.map( ( e ) => e.label )
-            const data = res.data.datasets.map(
-                ( e ) => e.data.reduce( ( acum, e ) => acum + e )
-            )
-
-            pTsDataIndex.current = -1
-            setPTsData({
-                labels: labels,
-                datasets: [ { data: data } ]
-            })
-
-            axios.get( `${apiHostname}/interactions${qParams}` )
-            .then( ( res ) => {
-                setInterList( res.data )
-                setSelInter( -1 )
-
-                setClientRoadmap( { labels: [], datasets: [] } )
-                setCreateInter( false )
-            })
+            setMTimespan( ( curr ) => ( { ...curr, week: null, day: null } ) )
+            setDTimespan( ( curr ) => ( { ...curr, week: null, day: null } ) )
+            setMetrics( res.data )
+            setSegment( -1 )
         })
+
+        axios.get( `${apiHostname}/interactions${qParams}` )
+        .then( ( res ) => {
+            setInterList( res.data )
+            setSelInter( -1 )
+            setClientRoadmap( { labels: [], datasets: [] } )
+            setCreateInter( false )
+        })
+
+        disableHover.current = true
+        setTimeout( () => {
+            disableHover.current = false
+        }, 1000 )
     }
 
     const handleWeekClick = () => {
-        let qParams = `?year=${mTs.year}&month=${mTs.month}&week=${mTs.week}`
-        qParams = qParams.concat( buildFiltersQParams() )
-        axios.get( `${apiHostname}/interactions/count${qParams}` )
+        let qParams = `?year=${mTimespan.year}&month=${mTimespan.month}&week=${mTimespan.week}`
+
+        axios.get( `${apiHostname}/metrics${qParams}` )
         .then( ( res ) => {
-            setData( res.data )
-            setMTs( ( curr ) => ( { ...curr, day: null } ) )
-            setPTs( ( curr ) => ( { ...curr, day: null } ) )
-
-            const labels = res.data.datasets.map( ( e ) => e.label )
-            const data = res.data.datasets.map(
-                ( e ) => e.data.reduce( ( acum, e ) => acum + e )
-            )
-
-            pTsDataIndex.current = -1
-            setPTsData({
-                labels: labels,
-                datasets: [ { data: data } ]
-            })
+            setMTimespan( ( curr ) => ( { ...curr, day: null } ) )
+            setDTimespan( ( curr ) => ( { ...curr, day: null } ) )
+            setMetrics( res.data )
+            setSegment( -1 )
 
             axios.get( `${apiHostname}/interactions${qParams}` )
             .then( ( res ) => {
                 setInterList( res.data )
                 setSelInter( -1 )
-
                 setClientRoadmap( { labels: [], datasets: [] } )
                 setCreateInter( false )
             })
         })
+
+        disableHover.current = true
+        setTimeout( () => {
+            disableHover.current = false
+        }, 1000 )
     }
 
     const handleChartClick = ( e ) => {
-        if( !opts.onHover ){ return }
+        // if( !opts.onHover ){ return }
+
         const element = getElementAtEvent( chartRef.current, e )
         if( !element.length ){ return }
+
         const { index } = element[ 0 ]
 
         let qParams = "?"
-        if( mTs.week !== null ){
-            setPTs( { ...mTs, day: index } )
-            qParams += `year=${mTs.year}&month=${mTs.month}&week=${mTs.week}&day=${index}`
+        if( mTimespan.week !== null ){
+            setMTimespan( ( curr ) => ( { ...curr, day: index } ) )
+            setDTimespan( ( curr ) => ( { ...curr, day: index } ) )
+            qParams += `year=${mTimespan.year}&month=${mTimespan.month}&week=${mTimespan.week}&day=${index}`
         }
-        else if( mTs.month && mTs.week === null ){
-            setMTs( ( curr ) => ( { ...curr, week: index } ) )
-            setPTs( ( curr ) => ( { ...curr, week: index } ) )
-            // setOpts( BAR_STACKED_NOT_CLICKABLE( setMTs, setPTs, setData, setPTsData, pTsDataIndex ) )
-            qParams += `year=${mTs.year}&month=${mTs.month}&week=${index}`
+        else if( mTimespan.month && mTimespan.week === null ){
+            setMTimespan( ( curr ) => ( { ...curr, week: index } ) )
+            setDTimespan( ( curr ) => ( { ...curr, week: index } ) )
+            qParams += `year=${mTimespan.year}&month=${mTimespan.month}&week=${index}`
         }
-        else if( mTs.year && mTs.month === null ){
-            setMTs( ( curr ) => ( { ...curr, month: index + 1 } ) )
-            setPTs( ( curr ) => ( { ...curr, month: index + 1 } ) )
-            qParams += `year=${mTs.year}&month=${index + 1}`
+        else if( mTimespan.year && mTimespan.month === null ){
+            setMTimespan( ( curr ) => ( { ...curr, month: index + 1 } ) )
+            setDTimespan( ( curr ) => ( { ...curr, month: index + 1 } ) )
+            qParams += `year=${mTimespan.year}&month=${index + 1}`
         }
         else{
             console.log( "ERROR: this condition should NEVER be true..." )
             // console.log( ts )
         }
 
-        qParams = qParams.concat( buildFiltersQParams() )
-
-        pTsDataIndex.current = -1
-        axios.get( `${apiHostname}/interactions/count${qParams}` )
+        axios.get( `${apiHostname}/metrics${qParams}` )
         .then( ( res ) => {
-            setData( res.data )
-
-            axios.get( `${apiHostname}/interactions${qParams}` )
-            .then( ( res ) => {
-                setInterList( res.data )
-                setSelInter( -1 )
-                setClientRoadmap( { labels: [], datasets: [] } )
-                setCreateInter( false )
-            })
+            setMetrics( res.data )
+            if( mTimespan.week === null ){
+                setSegment( -1 )
+            }
         })
+
+        axios.get( `${apiHostname}/interactions${qParams}` )
+        .then( ( res ) => {
+            setInterList( res.data )
+            setSelInter( -1 )
+            setClientRoadmap( { labels: [], datasets: [] } )
+            setCreateInter( false )
+        })
+
+        disableHover.current = true
+        setTimeout( () => {
+            disableHover.current = false
+        }, 1000 )
     }
 
     return <div
@@ -285,7 +256,10 @@ function MTsChart(){
     >
         <div
             style = {{
-                position: "relative",
+                display : "flex",
+                justifyContent: "space-between",
+                alignItems: "center"
+                // position: "relative",
             }}
         >
             <div
@@ -298,103 +272,42 @@ function MTsChart(){
                 }}
             >
                 <MTsButton
-                    text = { mTs.year }
+                    text = { mTimespan.year }
                     onClick = { handleYearClick }
                 />
-                { mTs.month !== null && <MTsButton
-                    text = { MONTH_NAMES[ mTs.month - 1 ] }
+                { mTimespan.month !== null && <MTsButton
+                    text = { MONTH_NAMES[ mTimespan.month - 1 ] }
                     marginLeft = { true }
                     onClick = { handleMonthClick }
                 />}
-                { mTs.week !== null && <MTsButton
-                    text = { `S${ mTs.week + 1 }` }
+                { mTimespan.week !== null && <MTsButton
+                    text = { `S${ mTimespan.week + 1 }` }
                     marginLeft = { true }
                     onClick = { handleWeekClick }
                 />}
             </div>
-            <button
-                onClick = { () => setShowFilters( curr => !curr ) }
-
-                style = {{
-                    position: "absolute",
-                    top: "0px",
-                    right: "0px",
-
-                    width: "25px",
-                    height: "25px",
-
-                    margin: "0",
-                    marginLeft: "auto",
-                    padding: "0",
-                    paddingTop: "3px"
-                }}
-            >
-                <img
-                    src = { FilterIcon }
-                    width = "16px"
-                    height = "16px"
-                />
-            </button>
-            { showFilters && <div
-                style = {{
-                    position: "absolute",
-                    top: "35px",
-                    right: "0px",
-
-                    backgroundColor: "#F1F4F9",
-                    borderColor: "#E2E9F3",
-                    borderRadius: "5px",
-
-                    // border: "1px solid red"
-                }}
-            >
-                <div
+            <div>
+                <p
                     style = {{
-                        // width: "300px",
-                        // height: "200px",
-                        padding: "10px",
+                        margin: "0",
+                        padding: "0",
 
-                        display: "flex",
-                        flexDirection: "column"
+                        fontSize: "large",
+                        fontWeight: "bold"
                     }}
                 >
-                    <select
-                        value = { agents[ filters.selAgent ] }
+                    Explorador
+                </p>
+                <div style = {{
+                    width: "100%",
+                    height: "2px",
 
-                        onClick = { ( e ) => setFilters( curr => (
-                            { ...curr, selAgent: e.target.selectedindex }
-                        ))}
-                    >
-                        { agents.map( ( e, i ) => (
-                            <option key = { i }>{ e }</option>
-                        ))}
-                    </select>
-                    <FilterButton
-                        text = "CONTACT"
-                        bgColor = { filters.contact ? "#31a3fa" : "#e3f0fa" }
+                    marginTop: "2px",
 
-                        onClick = { ( e ) => setFilters( curr => (
-                            { ...curr, contact: !curr.contact }
-                        ))}
-                    />
-                    <FilterButton
-                        text = "DEPOSIT"
-                        bgColor = { filters.deposit ? "#f83939" : "#fae3e3" }
-
-                        onClick = { ( e ) => setFilters( curr => (
-                            { ...curr, deposit: !curr.deposit }
-                        ))}
-                    />
-                    <FilterButton
-                        text = "ARRIVAL"
-                        bgColor = { filters.arrival ? "#f9b331" : "#faf2e3" }
-
-                        onClick = { ( e ) => setFilters( curr => (
-                            { ...curr, arrival: !curr.arrival }
-                        ))}
-                    />
-                </div>
-            </div>}
+                    borderRadius: "2px",
+                    backgroundColor: "#213547"
+                }}/>
+            </div>
         </div>
         <div
             style = {{
@@ -404,8 +317,13 @@ function MTsChart(){
         >
             <Bar
                 ref = { chartRef }
-                data = { data }
-                options = { opts }
+
+                data = {{
+                    labels: metrics.segments.labels,
+                    datasets: buildDatasets()
+                }}
+
+                options = { BAR_STACKED_CLICKABLE( disableHover, setMTimespan, segmentRef, setSegment, setDTimespan ) }
 
                 onClick = { handleChartClick }
             />
@@ -485,7 +403,7 @@ function ClientRoadMap(){
                 if( !element.length ){ return }
                 const { datasetIndex, index } = element[ 0 ]
 
-                if( clientRoadmap.datasets[ datasetIndex ].label !== "MILESTONE" ){
+                if( clientRoadmap.datasets[ datasetIndex ].label !== "MILESTONES" ){
                     setSelRoadmapInter( { datasetIndex: datasetIndex, index: index } )
                 }
             }}
@@ -497,22 +415,22 @@ function ClientRoadMap(){
 function LeftLowerFrame(){
     const { clientRoadmap } = useContext( Ctx )
 
-    return <div
-        style = {{
-            width: "100%",
+    return <>
+        { clientRoadmap.labels.length !== 0 && <div
+            style = {{
+                width: "100%",
+                height: "35%",
 
-            maxHeight: clientRoadmap.labels.length === 0 ? "0px" : "35%",
-            height: clientRoadmap.labels.length === 0 ? "0px" : "35%",
+                padding: "15px",
 
-            padding: clientRoadmap.labels.length === 0 ? "0" : "15px",
-
-            backgroundColor: "white",
-            borderRadius: "5px",
-            border: clientRoadmap.labels.length === 0 ? "none" : "1px solid #E2E9F3"
-        }}
-    >
-        <ClientRoadMap/>
-    </div>
+                backgroundColor: "white",
+                borderRadius: "5px",
+                border: "1px solid #E2E9F3"
+            }}
+        >
+            <ClientRoadMap/>
+        </div> }
+    </>
 }
 
 
@@ -553,63 +471,298 @@ function PTsPTag( { text, marginLeft = false } ){
 }
 
 
-function PTsChart(){
-    const { pTs, pTsData } = useContext( Ctx )
+function PLabel( { text, bc } ){
+    return <p
+        style = {{
+            width: "40px",
+            height: "10px",
 
-    return <>
+            margin: "0",
+            padding: "0",
+            paddingBottom: "13px",
+
+            borderRadius: "2px",
+            border: "1px solid grey",
+            backgroundColor: bc,
+
+            fontSize: "xx-small",
+            fontWeight: "bold",
+            textAlign: "center"
+        }}
+    >
+        { text }
+    </p>
+}
+
+
+function PercBar( { perc, mbc, sbc } ){
+    return <div
+        style = {{
+            width: "100%"
+        }}
+    >
+        <p
+            style = {{
+                margin: "0",
+                padding: "0",
+
+                fontSize: "medium",
+                fontWeight: "bold"
+            }}
+        >
+            { `${ perc }%` }
+        </p>
         <div
             style = {{
                 width: "100%",
-                height: "100%",
+                height: "5px"
+            }}
+        >
+            <div
+            style = {{
+                width: "100%",
 
                 display: "flex",
-                flexDirection: "column",
-                justifyContent: "space-between",
+                flexDirection: "row"
             }}
         >
             <div
                 style = {{
-                    display: "flex",
-                    flexDirection: "row",
-                    alignItems: "center",
+                    width: `${ perc }%`,
+                    height: "5px",
+
+                    borderTopLeftRadius: "2px",
+                    borderBottomLeftRadius: "2px",
+                    backgroundColor: mbc,
+                    transition: "width 0.5s"
                 }}
-            >
-                { pTs.month !== null && <PTsPTag
-                    text = { MONTH_NAMES[ pTs.month - 1 ] }
-                />}
-                { pTs.week !== null && <PTsPTag
-                    text = { `S${ pTs.week + 1 }` }
-                    marginLeft = { true }
-                />}
-                { pTs.day !== null && <PTsPTag
-                    text = { `${ DAY_NAMES[ pTs.day ] }` }
-                    marginLeft = { true }
-                />}
-            </div>
+            />
             <div
                 style = {{
-                    width: "100%",
-                    height: "86%",
+                    width: `${ 100 - perc }%`,
+                    height: "5px",
 
-                    padding: "0",
+                    borderTopRightRadius: "2px",
+                    borderBottomRightRadius: "2px",
+                    backgroundColor: sbc,
+                    transition: "width 0.5s"
+                }}
+            />
+        </div>
+        </div>
+    </div>
+}
+
+
+function PTsChart(){
+    const {
+        pTs, pTsData,
+        progPerc, setProgPerc,
+        segment, metrics,
+        dTimespan
+        // timespan
+    } = useContext( Ctx )
+
+    const buildDatasets = () => {
+        let datasets
+
+        if( segment === -1 ){
+            datasets = [{
+                data: [
+                    metrics.global.counts.L_RISK,
+                    metrics.global.counts.M_RISK,
+                    metrics.global.counts.H_RISK
+                ],
+
+                borderWidth: 1,
+
+                backgroundColor: [
+                    RiskLevelsParams.L_RISK.fc,
+                    RiskLevelsParams.M_RISK.fc,
+                    RiskLevelsParams.H_RISK.fc
+                ]
+            }]
+        }
+        else{
+            datasets = [{
+                data: [
+                    metrics.segments.counts[ segment ].L_RISK,
+                    metrics.segments.counts[ segment ].M_RISK,
+                    metrics.segments.counts[ segment ].H_RISK
+                ],
+
+                borderWidth: 1,
+
+                backgroundColor: [
+                    RiskLevelsParams.L_RISK.fc,
+                    RiskLevelsParams.M_RISK.fc,
+                    RiskLevelsParams.H_RISK.fc
+                ]
+            }]
+        }
+
+        return datasets
+    }
+
+    const progress = {}
+    if( segment === -1 ){
+        progress.L_RISK = metrics.global.progress.L_RISK
+        progress.M_RISK = metrics.global.progress.M_RISK
+        progress.H_RISK = metrics.global.progress.H_RISK
+    }
+    else{
+        progress.L_RISK = metrics.segments.progress[ segment ].L_RISK
+        progress.M_RISK = metrics.segments.progress[ segment ].M_RISK
+        progress.H_RISK = metrics.segments.progress[ segment ].H_RISK
+    }
+
+    return <div
+        style = {{
+            width: "100%",
+            height: "100%"
+        }}
+    >
+        <div
+            style = {{
+                width: "100%",
+
+                marginBottom: "10px",
+
+                display: "flex",
+                flexDirection: "row",
+                alignItems: "center"
+            }}
+        >
+            { dTimespan.year !== null && <PTsPTag
+                text = { dTimespan.year }
+            />}
+            { dTimespan.month !== null && <PTsPTag
+                text = { MONTH_NAMES[ dTimespan.month - 1 ] }
+                marginLeft = { true }
+            />}
+            { dTimespan.week !== null && <PTsPTag
+                text = { `S${ dTimespan.week + 1 }` }
+                marginLeft = { true }
+            />}
+            { dTimespan.day !== null && <PTsPTag
+                text = { `${ DAY_NAMES[ dTimespan.day ] }` }
+                marginLeft = { true }
+            />}
+        </div>
+        <div
+            style = {{
+                height: "100%",
+
+                display: "flex",
+                flexDirection: "row",
+            }}
+        >
+            <div
+                style = {{
+                    width: "137px",
+                    height: "137px",
+
+                    padding: "0"
                 }}
             >
                 <Pie
-                    data = { pTsData }
+                    data = {{
+                        labels: [ "BAJO", "MEDIO", "ALTO" ],
+                        datasets: buildDatasets()
+                    }}
+
                     options = {{
                         responsive: true,
                         maintainAspectRatio: false,
                     
                         plugins: {
                             legend: {
-                                position: "left"
+                                display: false
                             }
                         }
                     }}
                 />
+                <div
+                    style = {{
+                        marginTop: "6px",
+
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "center"
+                    }}
+                >
+                    <PLabel
+                        text = "ALTO"
+                        bc = "#FF4069"
+                    />
+                    <PLabel
+                        text = "MEDIO"
+                        bc = "#FF9020"
+                    />
+                    <PLabel
+                        text = "BAJO"
+                        bc = "#059BFF"
+                    />
+                </div>
+            </div>
+            <div
+                style = {{
+                    width: "100%",
+                    height: "fit-content",
+
+                    marginLeft: "15px"
+                }}
+            >
+                <p
+                    style = {{
+                        margin: "0",
+                        padding: "0",
+
+                        fontSize: "medium",
+                        fontWeight: "bold"
+                    }}
+                >
+                    Progreso
+                </p>
+                <div style = {{
+                    width: "100%",
+                    height: "2px",
+
+                    marginTop: "2px",
+                    marginBottom: "10px",
+
+                    borderRadius: "2px",
+                    backgroundColor: "#213547"
+                }}/>
+                <div
+                    style = {{
+                        height: "118px",
+
+                        display: "flex",
+                        flexDirection: "column",
+                        justifyContent: "space-between"
+                    }}
+                >
+                    <PercBar
+                        // perc = { progPerc.hr }
+                        perc = { progress.H_RISK }
+                        mbc = "#FF4069"
+                        sbc = "#FFB1C1"
+                    />
+                    <PercBar
+                        perc = { progress.M_RISK }
+                        mbc = "#FF9020"
+                        sbc = "#FFCF9F"
+                    />
+                    <PercBar
+                        perc = { progress.L_RISK }
+                        mbc = "#059BFF"
+                        sbc = "#9AD0F5"
+                    />
+                </div>
             </div>
         </div>
-    </>
+    </div>
 }
 
 
@@ -671,73 +824,6 @@ function Checker( { checked = false, handleCheckerClick } ){
 }
 
 
-const BarType = { "CONTACT": 0, "DEPOSIT": 1, "ARRIVAL": 2 }
-
-// function InterBar( { i, barType, clientVid, clientName, checked, handleCheckerClick } ){
-//     const BarBgCols = [ "#e3f0fa", "#fae3e3", "#faf2e3" ]
-
-//     const {
-//         setSelInter,
-//         clientRoadmap, setClientRoadmap
-//     } = useContext( Ctx )
-
-//     const handleClick = () => {
-//         setSelInter( i )
-        
-//         axios.get( `http://localhost:8000/client/${clientVid}/roadmap` )
-//         .then( ( res ) => {
-//             const roadmap = res.data
-//             setClientRoadmap( roadmap )
-//         })
-//     }
-
-//     return <div
-//         style = {{
-//             width: "100%",
-//             height: "50px",
-
-//             marginBottom: "7px",
-//             padding: "5px",
-
-//             borderRadius: "5px",
-//             border: "1px solid #E2E9F3",
-//             backgroundColor: BarBgCols[ BarType[ barType ] ]
-//         }}
-//     >
-//         <div
-//             style = {{
-//                 width: "100%",
-//                 height: "100%",
-
-//                 display: "flex",
-//                 flexDirection: "row",
-//                 justifyContent: "space-between",
-//                 alignItems: "center"
-//             }}
-//         >
-//             <p
-//                 className = "client-name"
-
-//                 onClick = { handleClick }
-
-//                 style = {{
-//                     paddingLeft: "7px",
-
-//                     fontSize: "large",
-//                     fontWeight: "bold"
-//                 }}
-//             >
-//                 { clientName }
-//             </p>
-//             <Checker
-//                 checked = { checked }
-//                 handleCheckerClick = { handleCheckerClick }
-//             />
-//         </div>
-//     </div>
-// }
-
-
 function InterBar( { interIndex, interaction, handleCheckerClick } ){
     const BarBgCols = [ "#e3f0fa", "#fae3e3", "#faf2e3" ]
 
@@ -755,10 +841,12 @@ function InterBar( { interIndex, interaction, handleCheckerClick } ){
             setSelInter( interIndex )
             setClientRoadmap( roadmap )
 
+            // console.log( roadmap )
+
             let i = 0
-            for( const e of roadmap.datasets[ BarType[ interaction.interaction.milestone_type ] ].data ){
+            for( const e of roadmap.datasets[ 0 ].data ){
                 if( e.x === interaction.interaction.inter_date ){
-                    setSelRoadmapInter( { datasetIndex: BarType[ interaction.interaction.milestone_type ], index: i } )
+                    setSelRoadmapInter( { datasetIndex: 0, index: i } )
                     return
                 }
                 i += 1
@@ -778,7 +866,7 @@ function InterBar( { interIndex, interaction, handleCheckerClick } ){
 
             borderRadius: "5px",
             border: "1px solid #E2E9F3",
-            backgroundColor: BarBgCols[ BarType[ interaction.interaction.milestone_type ] ]
+            backgroundColor: RiskLevelsParams[ interaction.client.risk_level ].tc
         }}
     >
         <div
@@ -804,7 +892,7 @@ function InterBar( { interIndex, interaction, handleCheckerClick } ){
                     fontWeight: "bold"
                 }}
             >
-                { interaction.client.name }
+                { interaction.client.name + " " + interaction.client.lastname }
             </p>
             <Checker
                 checked = { interaction.interaction.checked }
@@ -816,12 +904,14 @@ function InterBar( { interIndex, interaction, handleCheckerClick } ){
 
 
 function InterBarCont( { interList, setInterList } ){
+    const { mTimespan, setMetrics } = useContext( Ctx )
+
     const handleCheckerClick = ( i ) => {
         const client_vid = interList[ i ].client.vid
-        const milestone_type = interList[ i ].interaction.milestone_type
+        // const milestone_type = interList[ i ].interaction.milestone_type
         const inter_date = interList[ i ].interaction.inter_date
 
-        const qArgs = `?client_vid=${client_vid}&milestone_type=${milestone_type}&inter_date=${inter_date}}`
+        const qArgs = `?client_vid=${client_vid}&inter_date=${inter_date}`
 
         axios.post( `${apiHostname}/interactions/checked/toogle${qArgs}` )
         .then( ( res ) => {
@@ -830,6 +920,19 @@ function InterBarCont( { interList, setInterList } ){
                 aux[ i ].interaction.checked = res.data.new_value
                 
                 return aux
+            })
+
+            let qArgs = `?year=${mTimespan.year}`
+            if( mTimespan.month ){
+                qArgs = qArgs.concat( `&month=${mTimespan.month}` )
+                if( mTimespan.week ){
+                    qArgs = qArgs.concat( `&week=${mTimespan.week}` )
+                }
+            }
+
+            axios.get( `${apiHostname}/metrics${qArgs}` )
+            .then( ( res ) => {
+                setMetrics( res.data )
             })
         })
     }
@@ -844,7 +947,7 @@ function InterBarCont( { interList, setInterList } ){
             <InterBar
                 key = { i }
                 interIndex = { i }
-                interaction = { interList[ i ] }
+                interaction = { e }
 
                 handleCheckerClick = { () => handleCheckerClick( i ) }
             />
@@ -923,7 +1026,7 @@ function ClientName( { name, lastname } ){
 }
 
 
-function WhatsAppInfo( { phone } ){
+function WhatsAppInfo( { ctyCode, phone } ){
     return <div
         style = {{
             display: "flex",
@@ -951,7 +1054,7 @@ function WhatsAppInfo( { phone } ){
                 fontWeight: "bold"
             }}
         >
-            { phone }
+            { '+' + ctyCode + ' ' + phone }
         </p>
     </div>
 }
@@ -1039,7 +1142,8 @@ function InterDetails( { interaction, handleClose } ){
             lastname = { interaction.client.lastname }
         />
         <WhatsAppInfo
-            phone = { interaction.client.phone }
+            ctyCode = { interaction.client.cty_code }
+            phone = { interaction.client.phone_num }
         />
         <EmailInfo
             email = { interaction.client.email }
@@ -1149,45 +1253,6 @@ function InterCreator( { interaction, handleClose } ){
                     fontWeight: "bold"
                 }}
             >
-                Tipo:
-            </p>
-            <select
-                value = { interTypes[ type ] }
-
-                onChange = { ( e ) => setType( e.target.selectedIndex ) }
-
-                style = {{
-                    width: "107px",
-                    height: "30px",
-
-                    marginLeft: "10px",
-                    marginTop: "5px",
-
-                    fontSize: "large"
-                }}
-            >
-                <option>CONTACT</option>
-                <option>DEPOSIT</option>
-                <option>ARRIVAL</option>
-            </select>
-        </div>
-        <div
-            style = {{
-                display: "flex",
-                alignItems: "center",
-
-                marginTop: "10px"
-            }}
-        >
-            <p
-                style = {{
-                    margin: "0px",
-                    padding: "0px",
-
-                    fontSize: "x-large",
-                    fontWeight: "bold"
-                }}
-            >
                 Fecha:
             </p>
             <input
@@ -1241,7 +1306,6 @@ function InterCreator( { interaction, handleClose } ){
                     `${apiHostname}/interactions/create`,
                     {
                         client_vid: interaction.client.vid,
-                        milestone_type: interTypes[ type ],
                         inter_date: date,
                         inter_desc: comments
                     }
@@ -1340,22 +1404,45 @@ function RightSide(){
 
 
 function Dashboard(){
-    const [ mTs, setMTs ] = useState( { year: 2024, month: null, week: null, day: null } )
-    const [ pTs, setPTs ] = useState( { year: 2024, month: null, week: null, day: null } )
-    // const [ mTsData, setMTsData ] = useState( null )
-    const [ pTsData, setPTsData ] = useState( { labels: [], datasets: [] } )
+    const [ mTimespan, setMTimespan ] = useState( { year: 2024, month: null, week: null, day: null } )
+    const [ dTimespan, setDTimespan ] = useState( { year: 2024, month: null, week: null, day: null } )
+    const [ metrics, setMetrics ] = useState({
+        global: { counts: 0, progress: 0 },
+        segments: {
+            labels: [],
+            counts: [],
+            progress: []
+        }
+    })
+    const [ segment, setSegment ] = useState( -1 )
+
     const [ interList, setInterList ] = useState( [] )
     const [ selInter, setSelInter ] = useState( -1 )
     const [ clientRoadmap, setClientRoadmap ] = useState( { labels: [], datasets: [] } )
     const [ selRoadmapInter, setSelRoadmapInter ] = useState( -1 )
     const [ createInter, setCreateInter ] = useState( false )
 
+    useEffect(
+        () => {
+            axios.get( `${apiHostname}/metrics?year=2024` )
+            .then( ( res ) => {
+                setMetrics( res.data )
+            })
+
+            axios.get( `${apiHostname}/interactions?year=2024` )
+            .then( ( res ) => {
+                setInterList( res.data )
+            })
+        },
+        []
+    )
+
     return <Ctx.Provider
         value = {{
-            mTs, setMTs,
-            pTs, setPTs,
-            // mTsData, setMTsData,
-            pTsData, setPTsData,
+            mTimespan, setMTimespan,
+            dTimespan, setDTimespan,
+            metrics, setMetrics,
+            segment, setSegment,
             interList, setInterList,
             selInter, setSelInter,
             clientRoadmap, setClientRoadmap,
